@@ -2,9 +2,20 @@
 #define _USE_MATH_DEFINES
 #include"math.h"
 #include"../DeviceEnum/DeviceEnumerator.h"
-#include"cv.h"
+#include "opencv2/surface_matching.hpp"
+#include <iostream>
+#include<opencv2\opencv.hpp>
+#include "../Eigen/Dense"
+#include "opencv2/surface_matching/ppf_helpers.hpp"
+#include "opencv2/core/utility.hpp"
+#include<fstream>
+
+using namespace std;
+using namespace cv;
+using namespace ppf_match_3d;
 #include"highgui.h"
 #include<fstream>
+#include <stack>
 #include <time.h>
 #include"Pt.h"
 #include <algorithm>
@@ -19,12 +30,18 @@ namespace Winform_getWebCam {
 	using namespace System::Drawing;
 	using namespace cv;
 	using namespace std;
+
+	using Eigen::MatrixXd;
+	using Eigen::VectorXd;
+	using std::vector;
+
 	RNG rng(12345);
 	bool f_SS = false;
-	VideoCapture cap;
 
-	std::map<int, Device> devices;
+	VideoCapture cap;
+	vector<vector<Pt>> Pt_ClusterList;
 	double CarSpeed;
+	vector<Pt> LiDARPt;
 	vector<Pt>Pt_oldClusterRefPoint;
 	fstream fp;
 	time_t t1;
@@ -41,8 +58,8 @@ namespace Winform_getWebCam {
 			//
 			//TODO:  在此加入建構函式程式碼
 			//
-			timer1->Interval = 100;
-			fp.open("AllSensor291033.txt", ios::in);
+			timer1->Interval = 50;
+			fp.open("AllSensor291058.txt", ios::in);
 		}
 
 	protected:
@@ -104,10 +121,10 @@ namespace Winform_getWebCam {
 			// chart1
 			// 
 			chartArea1->AxisX->Interval = 100;
-			chartArea1->AxisX->Maximum = 1300;
-			chartArea1->AxisX->Minimum = -1300;
+			chartArea1->AxisX->Maximum = 3000;
+			chartArea1->AxisX->Minimum = -3000;
 			chartArea1->AxisY->Interval = 100;
-			chartArea1->AxisY->Maximum = 8000;
+			chartArea1->AxisY->Maximum = 6000;
 			chartArea1->AxisY->Minimum = 0;
 			chartArea1->Name = L"ChartArea1";
 			this->chart1->ChartAreas->Add(chartArea1);
@@ -237,10 +254,11 @@ namespace Winform_getWebCam {
 	}
 
 
+
 	private: System::Void timer1_Tick(System::Object^  sender, System::EventArgs^  e) {
 		chart1->Series["Series_LiDAR"]->Points->Clear();
 		chart1->Series["Series_LiDAR_CLOSE"]->Points->Clear();
-		vector<Pt> LiDARPt;
+
 		char line[10000];
 
 		fp.getline(line, sizeof(line), '\n');
@@ -250,48 +268,50 @@ namespace Winform_getWebCam {
 		if (StringArray->Length == 723)
 		{
 			tt2++;
+			LiDARPt.resize(0);
 			for (uint i = 0; i < 722; i++)
 			{
 
 				if (i % 2 == 1)
-				{ 
+				{
 					double Xreader = System::Convert::ToDouble(StringArray[i - 1]);
 					double Yreader = System::Convert::ToDouble(StringArray[i]);
-					if(-1300<Xreader && Xreader<1300 && Yreader<7000)
+					//if (-1300 < Xreader && Xreader < 1300 && Yreader < 7000)
 					LiDARPt.push_back(Pt(Xreader, Yreader));
 				}
-					
+
 			}
+
 			CarSpeed = System::Convert::ToDouble(StringArray[722]);
 			label1->Text = CarSpeed.ToString();
 
 			vector<Pt>Pt_newClusterRefPt;
 			vector<int >lab;
 			int nObj = partition(LiDARPt, lab);
-			vector<vector<Pt>> Pt_ClusterList = Cluster2List(LiDARPt, lab, nObj, 5);
-			Pt_newClusterRefPt.resize(Pt_ClusterList.size());
+			vector<vector<Pt>> Pt_ClusterList_new = Cluster2List(LiDARPt, lab, nObj, 5);
+			Pt_newClusterRefPt.resize(Pt_ClusterList_new.size());
 			//vector<Pt>Pt_newCluster = CaculateMediumPoint(LiDARPt, lab, nObj, 10);
 
 			int index = 0;
-			for (uint16_t i = 0; i < Pt_ClusterList.size(); i++)
+			for (uint16_t i = 0; i < Pt_ClusterList_new.size(); i++)
 			{
 				double  minX = 8000;
 				double minY = 8000;
 				Pt min;
 				Color color = Color::FromArgb(rng.uniform(0, 255), rng.uniform(0, 255), rng.uniform(0, 255));
-				for (uint j = 0; j < Pt_ClusterList[i].size(); j++)
+				for (uint j = 0; j < Pt_ClusterList_new[i].size(); j++)
 				{
-					if (abs(Pt_ClusterList[i][j].x) < minX)
+					if (abs(Pt_ClusterList_new[i][j].x) < minX)
 					{
-						min.x = Pt_ClusterList[i][j].x;
-						minX = abs(Pt_ClusterList[i][j].x);
+						min.x = Pt_ClusterList_new[i][j].x;
+						minX = abs(Pt_ClusterList_new[i][j].x);
 					}
-					if (abs(Pt_ClusterList[i][j].y) < minY)
+					if (abs(Pt_ClusterList_new[i][j].y) < minY)
 					{
-						minY = abs(Pt_ClusterList[i][j].y);
-						min.y = Pt_ClusterList[i][j].y;
+						minY = abs(Pt_ClusterList_new[i][j].y);
+						min.y = Pt_ClusterList_new[i][j].y;
 					}
-					chart1->Series["Series_LiDAR"]->Points->AddXY(Pt_ClusterList[i][j].x, Pt_ClusterList[i][j].y);
+					chart1->Series["Series_LiDAR"]->Points->AddXY(Pt_ClusterList_new[i][j].x, Pt_ClusterList_new[i][j].y);
 					chart1->Series["Series_LiDAR"]->Points[index]->Color = color;
 					index++;
 				}
@@ -308,13 +328,20 @@ namespace Winform_getWebCam {
 			for (uint i = 0; i < Pt_newClusterRefPt.size(); i++)
 			{
 				chart1->Series[1]->Points->AddXY(Pt_newClusterRefPt[i].x, Pt_newClusterRefPt[i].y);
-				chart1->Series[1]->Points[i]->Label = "(" + Math::Round(Pt_newClusterRefPt[i].x, 2).ToString() + " , " + Math::Round(Pt_newClusterRefPt[i].y, 2).ToString() + " , " + Math::Round(Pt_newClusterRefPt[i].velcity/100*3.6, 2).ToString() + ")";
+				if (Pt_newClusterRefPt[i].velcity != 0)
+					chart1->Series[1]->Points[i]->Label = "(" + Math::Round(Pt_newClusterRefPt[i].x, 2).ToString() + " , " + Math::Round(Pt_newClusterRefPt[i].y, 2).ToString() + " , " + Math::Round(Pt_newClusterRefPt[i].velcity / 100 * 3.6 + CarSpeed, 2).ToString() + ")";
 			}
 			chart1->Refresh();
 			Pt_oldClusterRefPoint = Pt_newClusterRefPt;
+
 		}
 		if (StringArray->Length == 1)
 		{
+			for (uint i = 0; i < LiDARPt.size(); i++)
+			{
+
+				chart1->Series["Series_LiDAR"]->Points->AddXY(LiDARPt[i].x, LiDARPt[i].y);
+			}
 			tt2++;
 		}
 	}
@@ -428,7 +455,7 @@ namespace Winform_getWebCam {
 		double distant = Math::Sqrt(Math::Pow((P1.x - P2.x), 2) + Math::Pow((P1.y - P2.y), 2));
 		return  distant <= 200;
 	}
-	private:int partition(cv::vector<Pt>& _vec, cv::vector<int>& labels)
+	private:int partition(vector<Pt>& _vec, vector<int>& labels)
 	{
 		int i, j, N = _vec.size();
 		const Pt* vec = &_vec[0];
@@ -436,7 +463,7 @@ namespace Winform_getWebCam {
 		const int PARENT = 0;
 		const int RANK = 1;
 
-		cv::vector<int> _nodes(N * 2);
+		vector<int> _nodes(N * 2);
 		int(*nodes)[2] = (int(*)[2])&_nodes[0];
 
 		for (i = 0; i < N; i++)
@@ -512,12 +539,12 @@ namespace Winform_getWebCam {
 	private:void FindClosePoint(vector<Pt>&NewPoints, vector<Pt>&oldPoints, double timeInterval)
 	{
 		double Ylim = 90.0f*(1000.0f / 36.0f)*timeInterval;
-		double Xlim =100* timeInterval;
+		double Xlim = 100 * timeInterval;
 		for (uint16_t i = 0; i < NewPoints.size(); i++)
 		{
 			double minDistant = 8000;
 			double distant;
-		
+
 			uint oldPointIndex = 0;
 			for (uint16_t j = 0; j < oldPoints.size(); j++)
 			{
@@ -528,7 +555,7 @@ namespace Winform_getWebCam {
 					minDistant = distant;
 				}
 			}
-			if (abs(NewPoints[i].x - oldPoints[oldPointIndex].x) < Xlim &&   abs(NewPoints[i].y - oldPoints[oldPointIndex].y) <Ylim)
+			if (abs(NewPoints[i].x - oldPoints[oldPointIndex].x) < Xlim &&   abs(NewPoints[i].y - oldPoints[oldPointIndex].y) < Ylim)
 			{
 				NewPoints[i].velcity = minDistant / timeInterval;
 				if (NewPoints[i].y - oldPoints[oldPointIndex].y > 0)
@@ -539,24 +566,38 @@ namespace Winform_getWebCam {
 			{
 				NewPoints[i].velcity = 0;
 			}
-			
+
 		}
 
 	}
-	private: System::Void button2_Click(System::Object^  sender, System::EventArgs^  e) {
-		vector<Pt> po;
-		po.push_back(Pt(1100, 24));
-		po.push_back(Pt(11, 23));
-		po.push_back(Pt(10, 20));
-		po.push_back(Pt(11, 24));
-		po.push_back(Pt(11, 22));
-		po.push_back(Pt(1101, 24));
 
-		po.push_back(Pt(1102, 24));
+	private: System::Void button2_Click(System::Object^  sender, System::EventArgs^  e) {
+		char line[10000];
+		fp.getline(line, sizeof(line), '\n');
+		System::String^ str = gcnew System::String(line);
+		cli::array<System::String^> ^StringArray = str->Split(' ');
+		tt2++;
+		LiDARPt.resize(0);
+		double XX[361];
+		double YY[361];
+		for (uint i = 0; i < 722; i++)
+		{
+
+			if (i % 2 == 1)
+			{
+				double Xreader = System::Convert::ToDouble(StringArray[i - 1]);
+				double Yreader = System::Convert::ToDouble(StringArray[i]);
+				//if (-1300 < Xreader && Xreader < 1300 && Yreader < 7000)
+				XX[i / 2] = Xreader;
+				YY[i / 2] = Yreader;
+				LiDARPt.push_back(Pt(Xreader, Yreader));
+			}
+		}
+		vector<Pt>Pt_newClusterRefPt;
 		vector<int >lab;
-		int nObj = partition(po, lab);
-		vector<Pt>Pt_newCluster = CaculateMediumPoint(po, lab, nObj, 1);
-		int a = 99;
+		int nObj = partition(LiDARPt, lab);
+		vector<vector<Pt>> Pt_ClusterList_new = Cluster2List(LiDARPt, lab, nObj, 5);
 	}
+	
 	};
 }
